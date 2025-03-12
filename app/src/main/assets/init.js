@@ -14,43 +14,24 @@ async function callRpc(verb, args) {
 }
 
 window["NATIVE_GATE"] = {
-  async start_daemon(params) {
-    await callRpc("start_daemon", [params]);
-    while (true) {
-      try {
-        await this.is_connected();
-        break;
-      } catch (e) {
-        await new Promise((r) => setTimeout(r, 200));
-        continue;
-      }
-    }
+  async start_daemon(daemon_args) {
+    await callRpc("start_daemon", [daemon_args]);
   },
+
+  async restart_daemon(daemon_args) {
+    await callRpc("restart_daemon", [daemon_args]);
+  },
+
   async stop_daemon() {
     await this.daemon_rpc("kill", []);
-    // await callRpc("stop_daemon", []);
   },
-  async is_connected() {
-    return await this.daemon_rpc("is_connected", []);
-  },
+
   async is_running() {
     try {
-      await this.daemon_rpc("is_connected", []);
-      return true;
+      return (await this.daemon_rpc("conn_info", [])).state !== "Disconnected";
     } catch (e) {
       return false;
     }
-  },
-  async sync_user_info(username, password) {
-    let sync_info = await callRpc("sync", [username, password, false]);
-    if (sync_info.user.subscription)
-      return {
-        level: sync_info.user.subscription.level.toLowerCase(),
-        expires: sync_info.user.subscription
-          ? new Date(sync_info.user.subscription.expires_unix * 1000.0)
-          : null,
-      };
-    else return { level: "free", expires: null };
   },
 
   async daemon_rpc(method, args) {
@@ -62,27 +43,17 @@ window["NATIVE_GATE"] = {
     return resp.result;
   },
 
-async binder_rpc(method, args) {
-  const req = { jsonrpc: "2.0", method: method, params: args, id: 1 };
-  const resp = await callRpc("binder_rpc", [JSON.stringify(req)]);
-  if (resp.error) {
-    throw resp.error.message;
-  }
-  return resp.result;
-},
-  async sync_exits(username, password) {
-    let sync_info = await callRpc("sync", [username, password, false]);
-    return sync_info.exits;
+  async price_points() {
+    return await this.daemon_rpc("price_points", []);
   },
 
-    async purge_caches(username, password) {
-      await callRpc("sync", [username, password, true]);
-    },
+  async create_invoice(secret, days) {
+    throw "unsupported";
+  },
 
-
-  supports_app_whitelist: true,
-    supports_listen_all: true,
-
+  async pay_invoice(id, method) {
+    throw "unsupported";
+  },
 
   async sync_app_list() {
     const result = await callRpc("get_app_list", []);
@@ -90,20 +61,31 @@ async binder_rpc(method, args) {
     return result;
   },
 
-  get_app_icon_url: async (id) => {
+  async get_app_icon_url(id) {
     return await callRpc("get_app_icon", [id]);
   },
 
-  async export_debug_pack() {
-    await callRpc("export_logs", []);
+  async export_debug_pack(email) {
+    await callRpc("export_logs", [email]);
   },
-  supports_autoupdate: JSON.parse(window.Android.jsHasPlay()),
+
+  async get_debug_pack() {
+    return await callRpc("get_debug_logs", []);
+  },
+
+  // Properties required by the interface
+  supports_listen_all: true,
+  supports_app_whitelist: true,
+  supports_prc_whitelist: true,
+  supports_proxy_conf: true,
+  supports_vpn_conf: true,
+  supports_autoupdate: true,
 
   async get_native_info() {
-        return {
-          platform_type: "android",
-          platform_details: "Android",
-          version: window.Android.jsVersion(),
-        };
-  }
+    return {
+      platform_type: "android",
+      platform_details: "Android",
+      version: window.Android.jsVersion(),
+    };
+  },
 };
