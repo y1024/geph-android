@@ -1,5 +1,7 @@
 package io.geph.android
 
+import android.content.Context
+import android.util.Log
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -29,15 +31,30 @@ data class DaemonArgs(
     val listenAll: Boolean,
 
 ) {
-    fun toConfig(): JsonElement {
+    fun toConfig(ctx: Context): JsonElement {
         return buildJsonObject {
             for ((originalKey, originalValue) in configTemplate()) {
                 put(originalKey, originalValue)
             }
 
+            when (exit) {
+                is JsonObject -> {
+                    putJsonObject("exit_constraint") {
+                        putJsonArray("country_city") {
+                            add(exit.get("country")!!)
+                            add(exit.get("city")!!)
+                        }
+                    }
+                }
+                else -> {}
+            }
+
             put("metadata", metadata)
+            put("dry_run", false)
             put("passthrough_china", prcWhitelist)
+            put("cache", ctx.filesDir.toString() + "/cache_" + secret)
             putJsonObject("credentials") {
+                Log.e("SECRET", secret)
                 put("secret", secret)
             }
         }

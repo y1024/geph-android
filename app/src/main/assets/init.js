@@ -23,7 +23,7 @@ window["NATIVE_GATE"] = {
   },
 
   async stop_daemon() {
-    await this.daemon_rpc("kill", []);
+    await this.daemon_rpc("stop", []);
   },
 
   async is_running() {
@@ -48,11 +48,30 @@ window["NATIVE_GATE"] = {
   },
 
   async create_invoice(secret, days) {
-    throw "unsupported";
+    return {
+      id: JSON.stringify([secret, days]),
+      methods: ["credit-card", "wechat"],
+    };
   },
 
   async pay_invoice(id, method) {
-    throw "unsupported";
+    try {
+      console.log(`Going to pay invoice ${id} with method ${method}`);
+      // Parse the id to extract secret and days
+      const [secret, days] = JSON.parse(id);
+
+      // Call the daemon_rpc with create_payment method
+      const url = await this.daemon_rpc("create_payment", [
+        secret,
+        days,
+        method,
+      ]);
+
+      // Open the URL using the android bridge
+      await callRpc("open_browser", [url]);
+    } catch (e) {
+      throw String(e);
+    }
   },
 
   async sync_app_list() {
@@ -74,12 +93,12 @@ window["NATIVE_GATE"] = {
   },
 
   // Properties required by the interface
-  supports_listen_all: true,
-  supports_app_whitelist: true,
-  supports_prc_whitelist: true,
-  supports_proxy_conf: true,
-  supports_vpn_conf: true,
-  supports_autoupdate: true,
+  supports_listen_all: false,
+  supports_app_whitelist: false,
+  supports_prc_whitelist: false,
+  supports_proxy_conf: false,
+  supports_vpn_conf: false,
+  supports_autoupdate: false,
 
   async get_native_info() {
     return {

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+export PATH=$HOME/.cargo/bin:/usr/bin/:/bin:$PATH
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/27.0.12077973
 
 # Make sure output directories exist
 mkdir -p prebuild/arm64-v8a prebuild/armeabi-v7a prebuild/x86 prebuild/x86_64

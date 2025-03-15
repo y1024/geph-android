@@ -19,6 +19,7 @@ import android.view.View
 import android.webkit.*
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.fragment.app.Fragment
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.webkit.WebViewAssetLoader
@@ -26,6 +27,7 @@ import io.geph.android.proxbinder.Proxbinder
 import io.geph.android.tun2socks.TunnelManager
 import io.geph.android.tun2socks.TunnelState
 import io.geph.android.tun2socks.TunnelVpnService
+import kotlinx.serialization.json.*
 import org.apache.commons.text.StringEscapeUtils
 import org.json.JSONArray
 import org.json.JSONObject
@@ -42,7 +44,6 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
 
     // -------------------------------------------------------------------
     // Fields for the main (VPN-based) daemon / service.
-    // These are used by start_daemon / stop_daemon, etc.
     // -------------------------------------------------------------------
     var isShow = false
     var scrollRange = -1
@@ -52,27 +53,22 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     private val mProgress: View? = null
     private var mWebView: WebView? = null
     private var vpnReceiver: Receiver? = null
-    private var mUsername: String? = null
-    private var mPassword: String? = null
-    private var mExitName: String? = null
-    private var mExcludeAppsJson: String? = null
-    private val mBypassChinese: Boolean? = null
-    private var mForceProtocol: String? = null
-    private var mListenAll: Boolean? = null
-    private var mForceBridges: Boolean? = null
+    
+    // Current daemon configuration 
+    private var daemonArgs: DaemonArgs? = null
 
     // -------------------------------------------------------------------
     // The fallback daemon, used ONLY for "daemon_rpc" if 127.0.0.1:10000 fails
     // -------------------------------------------------------------------
     /**
      * This daemon is used **only** for fallback when "daemon_rpc" fails to connect
-     * to 127.0.0.1:10000. It’s a read-only lazy property, so it’s only created
+     * to 127.0.0.1:10000. It's a read-only lazy property, so it's only created
      * once you actually access it.
      */
     private val fallbackDaemon: GephDaemon by lazy {
-        // Replace "configTemplate()" with your actual config logic if needed
         Log.d(TAG, "START FALLBACK DAEMON")
-        GephDaemon(this.applicationContext, configTemplate())
+        // Create with a default configuration
+        GephDaemon(this.applicationContext, configTemplate(), true)
     }
 
     // -------------------------------------------------------------------
@@ -223,19 +219,21 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         Log.e(TAG, verb!!)
         when (verb) {
             "start_daemon" -> {
-                // Start the main VPN-based service, not fallbackDaemon
+                // Create daemon args and start VPN service
                 rpcStartDaemon(args.getJSONObject(0))
+                Thread.sleep(1000);
                 return "null"
             }
             "restart_daemon" -> {
-                // Restart the main VPN-based service, not fallbackDaemon
+                // Restart daemon if the service is running
                 if (isServiceRunning) {
                     rpcStartDaemon(args.getJSONObject(0))
                 }
                 return "null"
             }
             "stop_daemon" -> {
-                // Stop the main VPN-based daemon; do NOT touch fallbackDaemon
+                // Stop the VPN service
+                stopVpn()
                 return "null"
             }
             "daemon_rpc" -> {
@@ -264,28 +262,55 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                 return "null"
             }
             "get_debug_logs" -> {
-                throw Exception("unsupported")
+                try {
+                    val process = Runtime.getRuntime().exec("logcat -d")
+                    val bufferedReader = process.inputStream.bufferedReader()
+                    val log = bufferedReader.use { it.readText() }
+                    return JSONObject.quote(log)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    "Error: ${e.message}"
+                }
             }
-            "create_invoice", "pay_invoice" -> {
-                throw Exception("unsupported")
+            "open_browser" -> {
+                Log.d(TAG, "open browser")
+                val url = args.getString(0)
+                val builder = CustomTabsIntent.Builder()
+
+// (Optional) customize toolbar color
+//                builder.setToolbarColor(ContextCompat.getColor(this, R.color.your_color))
+
+                val customTabsIntent = builder.build()
+                customTabsIntent.launchUrl(this, Uri.parse(url))
+                return "null"
             }
         }
         throw Exception("Unknown RPC verb: $verb")
     }
 
     // -------------------------------------------------------------------
-    // "start_daemon" calls here: sets up the main VPN-based service
+    // "start_daemon" calls here: sets up the main VPN-based service 
     // -------------------------------------------------------------------
     private fun rpcStartDaemon(args: JSONObject) {
-        mUsername = args.getString("username")
-        mPassword = args.getString("password")
-        mExitName = args.getString("exit_hostname")
-        mListenAll = args.getBoolean("listen_all")
-        mForceBridges = args.getBoolean("force_bridges")
-        mForceProtocol = args.getString("force_protocol")
-        mExcludeAppsJson = args.getJSONArray("app_whitelist").toString()
-        Log.d("EXCLUDEAPPS", mExcludeAppsJson!!)
-        startVpn()
+        try {
+            val jsonString = args.toString()
+            val json = Json { ignoreUnknownKeys = true }
+            daemonArgs = json.decodeFromString(DaemonArgs.serializer(), jsonString)
+
+            // Store the DaemonArgs in shared preferences as JSON for the VPN service
+            val prefs = applicationContext.getSharedPreferences("daemon", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putString(TunnelManager.DAEMON_ARGS, Json.encodeToString(DaemonArgs.serializer(), daemonArgs!!))
+                apply()
+            }
+            
+            // Start the VPN service
+            startVpn()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting daemon: ${e.message}", e)
+            throw e
+        }
     }
 
     // -------------------------------------------------------------------
@@ -402,25 +427,11 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     }
 
     protected fun startTunnelService(context: Context?) {
-        Log.i(TAG, "starting tunnel service")
+        Log.i(TAG, "Starting tunnel service")
         val startTunnelVpn = Intent(context, TunnelVpnService::class.java)
-        val prefs = context!!.getSharedPreferences("daemon", Context.MODE_PRIVATE)
-        with (prefs.edit()) {
-            putString(TunnelManager.SOCKS_SERVER_ADDRESS_BASE, SOCKS_SERVER_ADDRESS)
-            putString(TunnelManager.SOCKS_SERVER_PORT_EXTRA, SOCKS_SERVER_PORT)
-            putString(TunnelManager.DNS_SERVER_PORT_EXTRA, DNS_SERVER_PORT)
-            putString(TunnelManager.USERNAME, mUsername)
-            putString(TunnelManager.PASSWORD, mPassword)
-            putString(TunnelManager.EXIT_NAME, mExitName)
-            putBoolean(TunnelManager.FORCE_BRIDGES, mForceBridges!!)
-            putBoolean(TunnelManager.LISTEN_ALL, mListenAll!!)
-            putString(TunnelManager.FORCE_PROTOCOL, mForceProtocol)
-            putString(TunnelManager.EXCLUDE_APPS_JSON, mExcludeAppsJson)
-            commit()
-        }
-
+        
         if (startService(startTunnelVpn) == null) {
-            Log.d(TAG, "failed to start tunnel vpn service")
+            Log.d(TAG, "Failed to start tunnel vpn service")
             return
         }
         TunnelState.getTunnelState().setStartingTunnelManager()
@@ -434,9 +445,9 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     }
 
     override fun stopVpn() {
-        Log.e(TAG, "** ATTEMPTING STOP **")
+        Log.e(TAG, "Attempting to stop VPN")
         val currentTunnelManager = TunnelState.getTunnelState().tunnelManager
-        currentTunnelManager?.signalStopService() ?: Log.e(TAG, "cannot stop because null!")
+        currentTunnelManager?.signalStopService() ?: Log.e(TAG, "Cannot stop because tunnel manager is null!")
     }
 
     // -------------------------------------------------------------------
@@ -488,13 +499,6 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         private const val REQUEST_CODE_PREPARE_VPN = 100
         private const val CREATE_FILE = 1
         private const val FRONT = "front"
-
-        // Constants for your main daemon
-        private const val SOCKS_SERVER_ADDRESS = "127.0.0.1"
-        private const val SOCKS_SERVER_PORT = "9909"
-        private const val DNS_SERVER_PORT = "49983"
-
-
 
         fun encodeToBase64(image: Bitmap): String {
             val baos = ByteArrayOutputStream()
