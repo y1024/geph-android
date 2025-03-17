@@ -245,7 +245,11 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                     }
                 } catch (e: Exception) {
                     // If we fail to connect, fallback to the lazy fallbackDaemon
-                    fallbackDaemon.rawStdioRpc(command) ?: ""
+                    if (!command.contains("\"method\":\"stop\"")) {
+                        fallbackDaemon.rawStdioRpc(command) ?: ""
+                    } else {
+                        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\"}"
+                    }
                 }
             }
             "get_app_list" -> {
