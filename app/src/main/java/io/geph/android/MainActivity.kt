@@ -225,10 +225,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                 return "null"
             }
             "restart_daemon" -> {
-                // Restart daemon if the service is running
-                if (isServiceRunning) {
-                    rpcStartDaemon(args.getJSONObject(0))
-                }
+                throw Exception("restarting not supported")
                 return "null"
             }
             "stop_daemon" -> {
