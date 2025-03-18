@@ -49,9 +49,12 @@ data class DaemonArgs(
                 else -> {}
             }
 
-            put("metadata", metadata)
+            put("sess_metadata", metadata)
             put("dry_run", false)
             put("passthrough_china", prcWhitelist)
+            if (prcWhitelist || !(metadata is JsonNull)) {
+                put("spoof_dns", true)
+            }
             put("cache", ctx.filesDir.toString() + "/cache_" + secret)
             putJsonObject("credentials") {
                 Log.e("SECRET", secret)
