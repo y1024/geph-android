@@ -94,11 +94,11 @@ window["NATIVE_GATE"] = {
 
   // Properties required by the interface
   supports_listen_all: false,
-  supports_app_whitelist: false,
+  supports_app_whitelist: true,
   supports_prc_whitelist: false,
   supports_proxy_conf: false,
   supports_vpn_conf: false,
-  supports_autoupdate: false,
+  supports_autoupdate: true,
 
   async get_native_info() {
     return {

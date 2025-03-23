@@ -130,28 +130,20 @@ class TunnelManager(parentService: TunnelVpnService?) {
                 .addDnsServer("1.1.1.1")
                 .addDisallowedApplication(context!!.packageName)
             
-//            // Add excluded apps from the app whitelist
-//            try {
-//                // Get all installed apps
-//                val pm = context!!.packageManager
-//                val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-//                    .map { it.packageName }
-//                    .filter { it != context!!.packageName }
-//
-//                // Find apps to exclude (all apps except those in the whitelist)
-//                val appsToExclude = installedApps.filter { !daemonArgs.appWhitelist.contains(it) }
-//
-//                // Add each app to exclude to the VPN builder
-//                for (packageName in appsToExclude) {
-//                    try {
-//                        builder.addDisallowedApplication(packageName)
-//                    } catch (e: Exception) {
-//                        Log.w(LOG_TAG, "Failed to add app to exclusion list: $packageName")
-//                    }
-//                }
-//            } catch (e: Exception) {
-//                Log.e(LOG_TAG, "Error setting up app exclusions: ${e.message}")
-//            }
+            // Add excluded apps from the app whitelist
+            try {
+                // Only process app whitelist if it's not empty
+                for (packageName in daemonArgs.appWhitelist) {
+                    try {
+                        builder.addDisallowedApplication(packageName)
+                    } catch (e: Exception) {
+                        Log.w(LOG_TAG, "Failed to add app to exclusion list: $packageName")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Error setting up app exclusions: ${e.message}")
+                e.printStackTrace()
+            }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
