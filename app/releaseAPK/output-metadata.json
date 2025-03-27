@@ -11,10 +11,27 @@
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 11028,
-      "versionName": "4.8.5",
+      "versionCode": 11084,
+      "versionName": "5.0.0-beta.5",
       "outputFile": "app-releaseAPK.apk"
     }
   ],
-  "elementType": "File"
+  "elementType": "File",
+  "baselineProfiles": [
+    {
+      "minApi": 28,
+      "maxApi": 30,
+      "baselineProfiles": [
+        "baselineProfiles/1/app-releaseAPK.dm"
+      ]
+    },
+    {
+      "minApi": 31,
+      "maxApi": 2147483647,
+      "baselineProfiles": [
+        "baselineProfiles/0/app-releaseAPK.dm"
+      ]
+    }
+  ],
+  "minSdkVersionForDexing": 21
 }

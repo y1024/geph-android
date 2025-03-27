@@ -89,23 +89,37 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         vpnReceiver = Receiver()
         LocalBroadcastManager.getInstance(this).registerReceiver(vpnReceiver!!, filter)
 
-        if (Build.VERSION.SDK_INT >= 33) {
-            val permissionState = ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.POST_NOTIFICATIONS
-            )
-            if (permissionState == PackageManager.PERMISSION_DENIED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                    1
-                )
-            }
-        }
 
 
         // Start update service after the daemon is launched
-        startAutoUpdateService()
+
+        if (BuildConfig.BUILD_TYPE == "releaseAPK") {
+            if (Build.VERSION.SDK_INT >= 33) {
+                val permissionState = ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                )
+                if (permissionState == PackageManager.PERMISSION_DENIED) {
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        1
+                    )
+                }
+            }
+            startAutoUpdateService()
+        }
+    }
+
+    private fun isInstalledFromPlayStore(): Boolean {
+        val installerPackageName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            packageManager.getInstallSourceInfo(packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstallerPackageName(packageName)
+        }
+
+        return installerPackageName == "com.android.vending"
     }
 
     override fun onResume() {

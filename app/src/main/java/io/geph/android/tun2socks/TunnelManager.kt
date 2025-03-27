@@ -1,6 +1,5 @@
 package io.geph.android.tun2socks
 
-import android.annotation.TargetApi
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,14 +7,12 @@ import android.app.PendingIntent.FLAG_IMMUTABLE
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import androidx.core.app.NotificationCompat
-import android.system.Os
 import android.system.OsConstants.F_SETFD
+import androidx.core.app.NotificationCompat
 import android.util.Log
 import com.sun.jna.Library
 import com.sun.jna.Native
@@ -24,11 +21,9 @@ import io.geph.android.GephDaemon
 import io.geph.android.MainActivity
 import io.geph.android.R
 import kotlinx.serialization.json.*
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.util.*
+
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -150,7 +145,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
             }
             
             vpnInterface = builder.setBlocking(true)
-                .setMtu(16384)
+                .setMtu(65535)
                 .establish()
         }
         
@@ -159,7 +154,6 @@ class TunnelManager(parentService: TunnelVpnService?) {
     }
 
     private fun startGephDaemon(vpnInterface: ParcelFileDescriptor, daemonArgs: DaemonArgs) {
-        // Get native FD for VPN interface
         val fd = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val fd = vpnInterface.detachFd()
             var hoho = Native.load(LibC::class.java);
@@ -169,8 +163,6 @@ class TunnelManager(parentService: TunnelVpnService?) {
         } else {
             -1 // Will handle stdio-based approach for older versions
         }
-
-        
         // Create a config from the DaemonArgs
         val config = daemonArgs.toConfig(context!!).jsonObject
         
@@ -180,7 +172,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
             for ((key, value) in config) {
                 put(key, value)
             }
-            
+
             // Add VPN fd configuration if available
             if (fd >= 0) {
                 put("vpn_fd", fd)
@@ -195,7 +187,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
         
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             // For older Android versions, manually handle tunnel I/O
-            setupLegacyVpnIo(vpnInterface)
+            startLegacyIo(vpnInterface)
         }
         
         // Broadcast successful VPN start
@@ -226,8 +218,27 @@ class TunnelManager(parentService: TunnelVpnService?) {
         }
     }
     
-    private fun setupLegacyVpnIo(vpnInterface: ParcelFileDescriptor) {
-        throw Exception("todo")
+    private fun startLegacyIo(vpnInterface: ParcelFileDescriptor) {
+        // download
+        Log.e(LOG_TAG, "VPN I/O SET UP")
+        Thread {
+            val body = ByteArray(40000);
+            val writer = FileOutputStream(vpnInterface.fileDescriptor)
+            while(true) {
+                val n = gephDaemon!!.downloadVpn(body);
+                writer.write(body, 0, n)
+            }
+        }.start()
+        // upload
+        Thread {
+            Log.e(LOG_TAG, "VPN I/O UP STARTED")
+            val body = ByteArray(40000);
+            val reader = FileInputStream(vpnInterface.fileDescriptor)
+            while(true) {
+                val n = reader.read(body);
+                gephDaemon!!.uploadVpn(body, n);
+            }
+        }.start()
     }
 
     fun terminateDaemon() {

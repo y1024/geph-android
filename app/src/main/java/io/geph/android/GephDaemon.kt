@@ -25,7 +25,7 @@ class GephDaemon(
     private var outputWriter: BufferedWriter? = null
 
     // Thread to read from stderr
-    private val errorReaderThread: Thread
+    private var errorReaderThread: Thread? = null
 
     init {
         // 1) Convert the dynamic JSON object to a string
@@ -43,28 +43,43 @@ class GephDaemon(
                 configFile.absolutePath,
                 "--stdio-rpc"
             )
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            listOf(
+                context.applicationInfo.nativeLibraryDir + "/libgeph.so",
+                "--config",
+                configFile.absolutePath,
+                "--stdio-vpn"
+            )
         } else {
             listOf(
                 context.applicationInfo.nativeLibraryDir + "/libgeph.so",
                 "--config",
-                configFile.absolutePath
+                configFile.absolutePath,
             )
         }
 
         // 4) Spawn the daemon process
         daemonProcess = try {
-            ProcessBuilder(command)
-                .redirectInput(if (rpc) {
-                    ProcessBuilder.Redirect.PIPE
-                } else {
-                    ProcessBuilder.Redirect.INHERIT
-                })
-                .start()
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                ProcessBuilder(command)
+                    .start()
+            } else {
+                ProcessBuilder(command)
+                    .redirectInput(
+                        if (rpc) {
+                            ProcessBuilder.Redirect.PIPE
+                        } else {
+                            ProcessBuilder.Redirect.INHERIT
+                        }
+                    )
+                    .start()
+            }
         } catch (e: Exception) {
             throw RuntimeException("Failed to start Geph daemon process", e)
         }
 
         // 5) Set up readers/writers for stdin/stdout
+
         if (rpc) {
             inputReader = daemonProcess.inputStream.bufferedReader()
             outputWriter = daemonProcess.outputStream.bufferedWriter()
@@ -73,12 +88,17 @@ class GephDaemon(
         // 6) Set up a separate thread to continuously read stderr and log it
         errorReaderThread = Thread {
             daemonProcess.errorStream.bufferedReader().use { errorReader ->
-                var line: String?
-                while (errorReader.readLine().also { line = it } != null) {
-                    Log.e("GephDaemon", line!!)
+                try {
+                    var line: String?
+                    while (errorReader.readLine().also { line = it } != null) {
+                        Log.d("GephDaemon", line!!)
+                    }
+                } catch(e: Exception) {
+                    Log.d("GephDaemon", "exited with $e")
                 }
             }
         }.apply { start() }
+
     }
 
     /**
@@ -98,12 +118,30 @@ class GephDaemon(
         return inputReader!!.readLine()
     }
 
+    fun uploadVpn(arr: ByteArray, len: Int) {
+        daemonProcess.outputStream.write(len / 256)
+        daemonProcess.outputStream.write(len % 256)
+        daemonProcess.outputStream.write(arr, 0, len)
+        daemonProcess.outputStream.flush()
+    }
+
+    fun downloadVpn(bts: ByteArray): Int {
+        val a = daemonProcess.inputStream.read();
+        val b = daemonProcess.inputStream.read();
+        val len = a*256 + b;
+        var n = 0;
+        while (n < len) {
+            n += daemonProcess.inputStream.read(bts, n, len - n);
+        }
+        return n
+    }
+
     /**
      * Stops the daemon by destroying the underlying process.
      * Optionally interrupt/cleanup the stderr-reading thread if desired.
      */
     fun stopDaemon() {
         daemonProcess.destroy()
-        errorReaderThread.interrupt()
+        errorReaderThread?.interrupt()
     }
 }

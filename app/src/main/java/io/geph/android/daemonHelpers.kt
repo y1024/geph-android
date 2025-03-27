@@ -66,10 +66,6 @@ data class DaemonArgs(
 
 fun configTemplate(): JsonObject {
     return buildJsonObject {
-//        put("socks5_listen", "127.0.0.1:9909")
-//        put("http_proxy_listen", "127.0.0.1:9910")
-//        put("pac_listen", "127.0.0.1:12223")
-//        put("control_listen", "127.0.0.1:12222")
         put("exit_constraint", "auto")
         put("bridge_mode", "Auto")
         put("cache", JsonNull)
