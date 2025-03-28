@@ -11,8 +11,8 @@
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 11088,
-      "versionName": "5.0.0-rc.2",
+      "versionCode": 11089,
+      "versionName": "5.0.0",
       "outputFile": "app-releasePlay.apk"
     }
   ],
