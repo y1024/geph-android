@@ -86,19 +86,6 @@ fun configTemplate(): JsonObject {
                         put("host", "svitania-naidallszei-2.netlify.app")
                     }
                 }
-                // 3) aws_lambda
-                addJsonObject {
-                    putJsonObject("aws_lambda") {
-                        put("function_name", "geph-lambda-bouncer")
-                        put("region", "us-east-1")
-                        put("access_key_id", "AKIATYQFZKZO2XL5X37H")
-                        val secretPart1 = "Fnw1KvB1sDZawTe7nhcC"
-                        val secretPart2 = "5rbAsLlA9Pj8iaCKu5XR"
-                        val lightlyObfuscated = secretPart1 + secretPart2
-
-                        put("secret_access_key", lightlyObfuscated)
-                    }
-                }
             }
         }
 

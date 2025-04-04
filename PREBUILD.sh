@@ -9,10 +9,10 @@ mkdir -p prebuild/arm64-v8a prebuild/armeabi-v7a prebuild/x86 prebuild/x86_64
   cd geph5/binaries/geph5-client
 
   # Build for arm64-v8a
-  ~/.cargo/bin/cargo ndk -t arm64-v8a -p 21 build --profile release-small --features aws_lambda
+  ~/.cargo/bin/cargo ndk -t arm64-v8a -p 21 build --profile release-small
 
   # Build for armeabi-v7a
-  ~/.cargo/bin/cargo ndk -t armeabi-v7a -p 21 build --profile release-small --features aws_lambda
+  ~/.cargo/bin/cargo ndk -t armeabi-v7a -p 21 build --profile release-small
 )
 
 # Copy the resulting binaries to the correct folders

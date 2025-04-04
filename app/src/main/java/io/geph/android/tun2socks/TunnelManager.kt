@@ -14,6 +14,7 @@ import android.os.ParcelFileDescriptor
 import android.system.OsConstants.F_SETFD
 import androidx.core.app.NotificationCompat
 import android.util.Log
+import com.frybits.harmony.getHarmonySharedPreferences
 import com.sun.jna.Library
 import com.sun.jna.Native
 import io.geph.android.DaemonArgs
@@ -96,7 +97,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
         Log.e("SETUP", "Setting up VPN service and daemon")
         
         // Get DaemonArgs from shared preferences
-        val prefs = context!!.getSharedPreferences("daemon", Context.MODE_PRIVATE)
+        val prefs = context!!.getHarmonySharedPreferences("daemon")
         val daemonArgsJson = prefs.getString(DAEMON_ARGS, null)
         
         if (daemonArgsJson == null) {
@@ -180,6 +181,8 @@ class TunnelManager(parentService: TunnelVpnService?) {
             
             // Ensure control port is set for daemon_rpc
             put("control_listen", "127.0.0.1:10000")
+            put("socks5_listen", "127.0.0.1:9909")
+            put("http_proxy_listen", "127.0.0.1:9910")
         }
         
         // Create and start the daemon

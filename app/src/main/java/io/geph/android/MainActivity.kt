@@ -23,6 +23,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.webkit.WebViewAssetLoader
+import com.frybits.harmony.getHarmonySharedPreferences
 import io.geph.android.proxbinder.Proxbinder
 import io.geph.android.tun2socks.TunnelManager
 import io.geph.android.tun2socks.TunnelState
@@ -67,9 +68,19 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
      * access it.
      */
     private val fallbackDaemon: GephDaemon by lazy {
-        Log.d(TAG, "START FALLBACK DAEMON")
+
         // Create with a default configuration
-        GephDaemon(this.applicationContext, configTemplate(), true)
+        val fallbackConfig = buildJsonObject {
+            // Copy all elements from the original config
+            for ((key, value) in configTemplate()) {
+                put(key, value)
+            }
+
+            // Ensure control port is set for daemon_rpc
+            put("control_listen", "127.0.0.1:10001")
+        }
+        Log.d(TAG, "STARTING FALLBACK DAEMON")
+        GephDaemon(this.applicationContext, fallbackConfig, true)
     }
 
     // -------------------------------------------------------------------
@@ -278,18 +289,19 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
             "daemon_rpc" -> {
                 val command = args.getString(0)
                 Log.d(TAG, "daemon rpc: ${command}")
+                val ex = { socket: Socket ->
+                    val out = PrintWriter(socket.getOutputStream(), true)
+                    val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+                    out.println(command)
+                    input.readLine() // read one-line response
+                };
                 return try {
-                    // Attempt a TCP connection to 127.0.0.1:10000
-                    Socket("127.0.0.1", 10000).use { socket ->
-                        val out = PrintWriter(socket.getOutputStream(), true)
-                        val input = BufferedReader(InputStreamReader(socket.getInputStream()))
-                        out.println(command)
-                        input.readLine() // read one-line response
-                    }
+                    Socket("127.0.0.1", 10000).use(ex)
                 } catch (e: Exception) {
+                    fallbackDaemon;
                     // If we fail to connect, fallback to the lazy fallbackDaemon
                     if (!command.contains("\"method\":\"stop\"")) {
-                        fallbackDaemon.rawStdioRpc(command) ?: "stdout died"
+                        Socket("127.0.0.1", 10001).use(ex) ?: "stdout died"
                     } else {
                         "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\"}"
                     }
@@ -343,13 +355,13 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
             daemonArgs = json.decodeFromString(DaemonArgs.serializer(), jsonString)
 
             // Store the DaemonArgs in shared preferences as JSON for the VPN service
-            val prefs = applicationContext.getSharedPreferences("daemon", MODE_PRIVATE)
+            val prefs = applicationContext.getHarmonySharedPreferences("daemon")
             prefs.edit().apply {
                 putString(
                         TunnelManager.DAEMON_ARGS,
                         Json.encodeToString(DaemonArgs.serializer(), daemonArgs!!)
                 )
-                apply()
+                commit()
             }
 
             // Start the VPN service
@@ -443,42 +455,6 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_CODE_PREPARE_VPN && resultCode == RESULT_OK) {
             startTunnelService(applicationContext)
-        } else if (requestCode == CREATE_FILE && resultCode == RESULT_OK) {
-            val ctx = applicationContext
-            val daemonBinaryPath: String = applicationInfo.nativeLibraryDir + "/libgeph.so"
-            val debugPackPath = applicationInfo.dataDir + "/geph4-debugpack.db"
-            val debugPackExportedPath = applicationInfo.dataDir + "/geph4-debugpack-exported.db"
-            val pb =
-                    ProcessBuilder(
-                            daemonBinaryPath,
-                            "debugpack",
-                            "--export-to",
-                            debugPackExportedPath,
-                            "--debugpack-path",
-                            debugPackPath
-                    )
-            thread {
-                try {
-                    val process = pb.start()
-                    val retval = process.waitFor()
-                    Log.d(TAG, "Export process returned $retval")
-                } catch (e: IOException) {
-                    Log.e(TAG, "Export debugpack failed: ${e.message}")
-                }
-                try {
-                    FileInputStream(debugPackExportedPath).use { `is` ->
-                        contentResolver.openOutputStream(data!!.data!!).use { os ->
-                            val buffer = ByteArray(1024)
-                            var length: Int
-                            while (`is`.read(buffer).also { length = it } > 0) {
-                                os!!.write(buffer, 0, length)
-                            }
-                        }
-                    }
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                }
-            }
         }
     }
 

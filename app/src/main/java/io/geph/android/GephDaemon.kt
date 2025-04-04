@@ -30,7 +30,7 @@ class GephDaemon(
     init {
         // 1) Convert the dynamic JSON object to a string
         val configString = Json.encodeToString(JsonObject.serializer(), config)
-
+        Log.d("GephDaemon", "starting with $config")
         // 2) Write the config to the app's private files directory
         val configFile = File.createTempFile("geph_config_", ".json", context.cacheDir)
         configFile.writeText(configString)
