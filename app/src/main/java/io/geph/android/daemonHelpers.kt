@@ -49,6 +49,14 @@ data class DaemonArgs(
                 else -> {}
             }
 
+            if (listenAll) {
+                put("socks5_listen", "0.0.0.0:9909")
+                put("http_proxy_listen", "0.0.0.0:9910")
+            } else {
+                put("socks5_listen", "127.0.0.1:9909")
+                put("http_proxy_listen", "127.0.0.1:9910")
+            }
+
             put("sess_metadata", metadata)
             put("dry_run", false)
             put("passthrough_china", prcWhitelist)
@@ -71,18 +79,18 @@ fun configTemplate(): JsonObject {
         put("cache", JsonNull)
 
         putJsonObject("broker") {
-            putJsonArray("race") {
+            putJsonObject("priority_race") {
                 // 1) First fronted
-                addJsonObject {
+                putJsonObject("0") {
                     putJsonObject("fronted") {
                         put("front", "https://www.cdn77.com/")
                         put("host", "1826209743.rsc.cdn77.org")
                     }
                 }
                 // 2) Second fronted
-                addJsonObject {
+                putJsonObject("1000") {
                     putJsonObject("fronted") {
-                        put("front", "https://vuejs.org/")
+                        put("front", "https://www.vuejs.org/")
                         put("host", "svitania-naidallszei-2.netlify.app")
                     }
                 }

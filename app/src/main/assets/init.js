@@ -50,7 +50,7 @@ window["NATIVE_GATE"] = {
   async create_invoice(secret, days) {
     return {
       id: JSON.stringify([secret, days]),
-      methods: ["credit-card", "wechat"],
+      methods: await this.daemon_rpc("payment_methods", []),
     };
   },
 
@@ -93,7 +93,7 @@ window["NATIVE_GATE"] = {
   },
 
   // Properties required by the interface
-  supports_listen_all: false,
+  supports_listen_all: true,
   supports_app_whitelist: true,
   supports_prc_whitelist: false,
   supports_proxy_conf: false,
