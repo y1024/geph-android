@@ -123,7 +123,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
             val builder = m_parentService!!.newBuilder()
                 .addAddress("100.64.89.64", 10)
                 .addRoute("0.0.0.0", 0)
-                .addDnsServer("1.1.1.1")
+                .addDnsServer("100.64.89.1")
                 .addDisallowedApplication(context!!.packageName)
             
             // Add excluded apps from the app whitelist
@@ -181,8 +181,6 @@ class TunnelManager(parentService: TunnelVpnService?) {
             
             // Ensure control port is set for daemon_rpc
             put("control_listen", "127.0.0.1:10000")
-            put("socks5_listen", "127.0.0.1:9909")
-            put("http_proxy_listen", "127.0.0.1:9910")
         }
         
         // Create and start the daemon
