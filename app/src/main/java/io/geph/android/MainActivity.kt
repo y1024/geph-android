@@ -378,6 +378,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     // Start the auto-update service with the daemon RPC function
     // -------------------------------------------------------------------
     private fun startAutoUpdateService() {
+        fallbackDaemon;
         val daemonRpcFunction = { method: String, args: JSONArray ->
             val jsonRequest =
                     JSONObject().apply {
