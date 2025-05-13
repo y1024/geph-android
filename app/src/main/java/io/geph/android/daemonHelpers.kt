@@ -7,7 +7,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -92,6 +94,26 @@ fun configTemplate(): JsonObject {
                     putJsonObject("fronted") {
                         put("front", "https://www.vuejs.org/")
                         put("host", "svitania-naidallszei-2.netlify.app")
+                        put("override_dns", buildJsonArray {
+                            add("75.2.60.5:443")
+                        })
+                    }
+                }
+                putJsonObject("1000") {
+                    putJsonObject("fronted") {
+                        put("front", "https://www.vuejs.org/")
+                        put("host", "svitania-naidallszei-3.netlify.app")
+                        put("override_dns", buildJsonArray {
+                            add("75.2.60.5:443")
+                        })
+                    }
+                }
+
+                putJsonObject("1500") {
+                    putJsonObject("aws_lambda") {
+                        put("function_name", "geph-lambda-bouncer")
+                        put("region", "us-east-1")
+                        put("obfs_key", "855MJGAMB58MCPJBB97NADJ36D64WM2T:C4TN2M1H68VNMRVCCH57GDV2C5VN6V3RB8QMWP235D0P4RT2ACV7GVTRCHX3EC37")
                     }
                 }
             }
