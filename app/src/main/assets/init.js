@@ -14,6 +14,7 @@ async function callRpc(verb, args) {
 }
 
 window["NATIVE_GATE"] = {
+  
   async start_daemon(daemon_args) {
     await callRpc("start_daemon", [daemon_args]);
   },
@@ -47,9 +48,20 @@ window["NATIVE_GATE"] = {
     return await this.daemon_rpc("price_points", []);
   },
 
+  async basic_price_points() {
+    return await this.daemon_rpc("basic_price_points", []);
+  },
+
   async create_invoice(secret, days) {
     return {
-      id: JSON.stringify([secret, days]),
+      id: JSON.stringify([secret, days, "unlimited"]),
+      methods: await this.daemon_rpc("payment_methods", []),
+    };
+  },
+
+  async create_basic_invoice(secret, days) {
+    return {
+      id: JSON.stringify([secret, days, "basic"]),
       methods: await this.daemon_rpc("payment_methods", []),
     };
   },
@@ -58,10 +70,10 @@ window["NATIVE_GATE"] = {
     try {
       console.log(`Going to pay invoice ${id} with method ${method}`);
       // Parse the id to extract secret and days
-      const [secret, days] = JSON.parse(id);
+      const [secret, days, level] = JSON.parse(id);
 
       // Call the daemon_rpc with create_payment method
-      const url = await this.daemon_rpc("create_payment", [
+      const url = await this.daemon_rpc(level === "basic" ? "create_basic_payment" : "create_payment", [
         secret,
         days,
         method,
@@ -90,6 +102,18 @@ window["NATIVE_GATE"] = {
 
   async get_debug_pack() {
     return await callRpc("get_debug_logs", []);
+  },
+
+  async get_basic_info(secret) {
+    const limit = await this.daemon_rpc("basic_mb_limit", []);
+    const show = await this.daemon_rpc("ab_test", ["basic", secret]);
+    if (show) {
+      return {
+        "bw_limit": limit,
+      }
+    } else {
+      return null
+    }
   },
 
   // Properties required by the interface
