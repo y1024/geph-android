@@ -16,6 +16,7 @@ import android.os.Handler
 import android.util.Base64
 import android.util.Log
 import android.view.View
+import android.view.View.OVER_SCROLL_NEVER
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
@@ -169,6 +170,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         wview.settings.domStorageEnabled = true
         wview.settings.javaScriptCanOpenWindowsAutomatically = true
         wview.settings.setSupportMultipleWindows(false)
+        wview.overScrollMode = OVER_SCROLL_NEVER
         WebView.setWebContentsDebuggingEnabled(true)
         wview.webChromeClient = WebChromeClient()
 
