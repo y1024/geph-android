@@ -146,7 +146,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
             }
             
             vpnInterface = builder.setBlocking(true)
-                .setMtu(65535)
+                .setMtu(16384)
                 .establish()
         }
         
