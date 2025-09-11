@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 //    id("com.google.gms.google-services")
     id("kotlinx-serialization")
 }
@@ -13,12 +14,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    compileSdkVersion 34
+    // Ensure Kotlin targets Java 17 bytecode explicitly.
+    // Without this, newer JDK toolchains (e.g., 21) can be inferred
+    // and older Kotlin plugins will fail with "Unknown Kotlin JVM target: 21".
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+    compileSdk 34
     defaultConfig {
         applicationId 'io.geph.android'
-        minSdkVersion 21
-        targetSdkVersion 34
-        versionCode 11207
+        minSdk 21
+        targetSdk 34
+        versionCode 11208
         versionName '5.2.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {
@@ -72,7 +79,7 @@ dependencies {
     implementation 'com.squareup.retrofit2:retrofit:2.2.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.2.0'
     implementation 'com.google.code.gson:gson:2.8.6'
-    implementation 'com.android.volley:volley:1.1.0'
+    implementation 'com.android.volley:volley:1.2.1'
     implementation 'com.vdurmont:semver4j:3.1.0'
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
@@ -106,6 +113,3 @@ afterEvaluate {
         variant.javaCompiler.dependsOn(copyGephBinaries)
     }
 }
-
-apply plugin: 'kotlin-android'
-
