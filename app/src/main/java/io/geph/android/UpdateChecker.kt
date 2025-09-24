@@ -136,7 +136,7 @@ class UpdateChecker(
      * Compares two version strings according to semantic versioning using semver4j.
      * @return positive if v1 > v2, negative if v1 < v2, 0 if equal
      */
-    private fun compareVersions(v1: String, v2: String): Int {
+    private fun compareVersions(v1: String, v2: String?): Int {
         val semver1 = Semver(v1, Semver.SemverType.NPM)
         val semver2 = Semver(v2, Semver.SemverType.NPM)
         return semver1.compareTo(semver2)
