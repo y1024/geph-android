@@ -20,13 +20,13 @@ android {
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
-    compileSdk 34
+    compileSdk 35
     defaultConfig {
         applicationId 'io.geph.android'
         minSdk 21
-        targetSdk 34
-        versionCode 11211
-        versionName '5.3.0'
+        targetSdk 35
+        versionCode 11213
+        versionName '5.3.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
