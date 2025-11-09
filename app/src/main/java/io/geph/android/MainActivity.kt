@@ -300,10 +300,9 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                 return try {
                     Socket("127.0.0.1", 10000).use(ex)
                 } catch (e: Exception) {
-                    fallbackDaemon;
-                    // If we fail to connect, fallback to the lazy fallbackDaemon
+                    Log.w(TAG, "daemon_rpc socket failed, falling back to stdio", e)
                     if (!command.contains("\"method\":\"stop\"")) {
-                        Socket("127.0.0.1", 10001).use(ex) ?: "stdout died"
+                        fallbackDaemon.rawStdioRpc(command) ?: "stdout died"
                     } else {
                         "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\"}"
                     }
