@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.VpnService
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants.F_SETFD
@@ -73,8 +74,16 @@ class TunnelManager(parentService: TunnelVpnService?) {
                 .setContentIntent(pendingIntent)
         val notification = builder.build()
         
-        // starting this service on foreground to avoid accidental GC by Android system
-        vpnService!!.startForeground(NOTIFICATION_ID, notification)
+        // Start foreground as special-use on API 34+ (VPNs require continuous FGS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // API 34+
+            vpnService!!.startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            vpnService!!.startForeground(NOTIFICATION_ID, notification)
+        }
         return Service.START_STICKY
     }
 

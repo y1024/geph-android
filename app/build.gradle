@@ -8,7 +8,7 @@ plugins {
 
 
 android {
-    ndkVersion "19.2.5345600"
+    ndkVersion "29.0.14206865"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -25,7 +25,7 @@ android {
         applicationId 'io.geph.android'
         minSdk 21
         targetSdk 35
-        versionCode 11213
+        versionCode 11215
         versionName '5.3.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {
