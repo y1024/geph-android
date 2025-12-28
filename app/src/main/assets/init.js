@@ -132,3 +132,5 @@ window["NATIVE_GATE"] = {
     };
   },
 };
+
+window.dispatchEvent(new Event("native_gate_ready"));
