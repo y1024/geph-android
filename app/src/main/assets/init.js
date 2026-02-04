@@ -14,43 +14,25 @@ async function callRpc(verb, args) {
 }
 
 window["NATIVE_GATE"] = {
-  async start_daemon(params) {
-    await callRpc("start_daemon", [params]);
-    while (true) {
-      try {
-        await this.is_connected();
-        break;
-      } catch (e) {
-        await new Promise((r) => setTimeout(r, 200));
-        continue;
-      }
-    }
+  
+  async start_daemon(daemon_args) {
+    await callRpc("start_daemon", [daemon_args]);
   },
+
+  async restart_daemon(daemon_args) {
+    await callRpc("restart_daemon", [daemon_args]);
+  },
+
   async stop_daemon() {
-    await this.daemon_rpc("kill", []);
-    // await callRpc("stop_daemon", []);
+    await this.daemon_rpc("stop", []);
   },
-  async is_connected() {
-    return await this.daemon_rpc("is_connected", []);
-  },
+
   async is_running() {
     try {
-      await this.daemon_rpc("is_connected", []);
-      return true;
+      return (await this.daemon_rpc("conn_info", [])).state !== "Disconnected";
     } catch (e) {
       return false;
     }
-  },
-  async sync_user_info(username, password) {
-    let sync_info = await callRpc("sync", [username, password, false]);
-    if (sync_info.user.subscription)
-      return {
-        level: sync_info.user.subscription.level.toLowerCase(),
-        expires: sync_info.user.subscription
-          ? new Date(sync_info.user.subscription.expires_unix * 1000.0)
-          : null,
-      };
-    else return { level: "free", expires: null };
   },
 
   async daemon_rpc(method, args) {
@@ -62,27 +44,47 @@ window["NATIVE_GATE"] = {
     return resp.result;
   },
 
-async binder_rpc(method, args) {
-  const req = { jsonrpc: "2.0", method: method, params: args, id: 1 };
-  const resp = await callRpc("binder_rpc", [JSON.stringify(req)]);
-  if (resp.error) {
-    throw resp.error.message;
-  }
-  return resp.result;
-},
-  async sync_exits(username, password) {
-    let sync_info = await callRpc("sync", [username, password, false]);
-    return sync_info.exits;
+  async price_points() {
+    return await this.daemon_rpc("price_points", []);
   },
 
-    async purge_caches(username, password) {
-      await callRpc("sync", [username, password, true]);
-    },
+  async basic_price_points() {
+    return await this.daemon_rpc("basic_price_points", []);
+  },
 
+  async create_invoice(secret, days) {
+    return {
+      id: JSON.stringify([secret, days, "unlimited"]),
+      methods: await this.daemon_rpc("payment_methods", []),
+    };
+  },
 
-  supports_app_whitelist: true,
-    supports_listen_all: true,
+  async create_basic_invoice(secret, days) {
+    return {
+      id: JSON.stringify([secret, days, "basic"]),
+      methods: await this.daemon_rpc("payment_methods", []),
+    };
+  },
 
+  async pay_invoice(id, method) {
+    try {
+      console.log(`Going to pay invoice ${id} with method ${method}`);
+      // Parse the id to extract secret and days
+      const [secret, days, level] = JSON.parse(id);
+
+      // Call the daemon_rpc with create_payment method
+      const url = await this.daemon_rpc(level === "basic" ? "create_basic_payment" : "create_payment", [
+        secret,
+        days,
+        method,
+      ]);
+
+      // Open the URL using the android bridge
+      await callRpc("open_browser", [url]);
+    } catch (e) {
+      throw String(e);
+    }
+  },
 
   async sync_app_list() {
     const result = await callRpc("get_app_list", []);
@@ -90,20 +92,43 @@ async binder_rpc(method, args) {
     return result;
   },
 
-  get_app_icon_url: async (id) => {
+  async get_app_icon_url(id) {
     return await callRpc("get_app_icon", [id]);
   },
 
-  async export_debug_pack() {
-    await callRpc("export_logs", []);
+  async export_debug_pack(email) {
+    await callRpc("export_logs", [email]);
   },
-  supports_autoupdate: JSON.parse(window.Android.jsHasPlay()),
+
+  async get_debug_pack() {
+    return await callRpc("get_debug_logs", []);
+  },
+
+  async get_basic_info(secret) {
+    const limit = await this.daemon_rpc("basic_mb_limit", []);
+    const show = await this.daemon_rpc("ab_test", ["basic", secret]);
+    if (show) {
+      return {
+        "bw_limit": limit,
+      }
+    } else {
+      return null
+    }
+  },
+
+  // Properties required by the interface
+  supports_listen_all: true,
+  supports_app_whitelist: true,
+  supports_prc_whitelist: false,
+  supports_proxy_conf: false,
+  supports_vpn_conf: false,
+  supports_autoupdate: true,
 
   async get_native_info() {
-        return {
-          platform_type: "android",
-          platform_details: "Android",
-          version: window.Android.jsVersion(),
-        };
-  }
+    return {
+      platform_type: "android",
+      platform_details: "Android",
+      version: window.Android.jsVersion(),
+    };
+  },
 };

@@ -1,39 +1,21 @@
+#!/usr/bin/env bash
+export PATH=$HOME/.cargo/bin:/usr/bin/:/bin:$PATH
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/29.0.14206865
 
-#!/bin/bash
+# Make sure output directories exist
+mkdir -p prebuild/arm64-v8a prebuild/armeabi-v7a prebuild/x86 prebuild/x86_64
 
-export PREFIX="https://f001.backblazeb2.com/file/geph-dl/geph4-binaries/v$(cat app/build.gradle | grep versionName | awk '{print $2}' | tr -d \')"
+(
+  cd geph5/binaries/geph5-client
+  export CARGO_TARGET_DIR=../../target/
+  # Build for arm64-v8a
+  ~/.cargo/bin/cargo ndk -t arm64-v8a --platform 21 build --release --features aws_lambda
 
-echo $PREFIX
+  # Build for armeabi-v7a
+  ~/.cargo/bin/cargo ndk -t armeabi-v7a --platform 21 build --release --features aws_lambda
+)
 
-PREBUILD="./prebuild"
-# ABI names must match with arguments provided to android.defaultConfig.ndk.abiFilters
-ARM_DIR=$PREBUILD"/armeabi-v7a"
-ARM64_DIR=$PREBUILD"/arm64-v8a"
-X86_DIR=$PREBUILD"/x86"
-X86_64_DIR=$PREBUILD"/x86_64"
-TARGET="libgeph.so"
+# Copy the resulting binaries to the correct folders
+cp geph5/target/aarch64-linux-android/release/geph5-client       prebuild/arm64-v8a/libgeph.so
+cp geph5/target/armv7-linux-androideabi/release/geph5-client     prebuild/armeabi-v7a/libgeph.so
 
-mkdir -p $ARM_DIR
-mkdir -p $X86_DIR
-mkdir -p $ARM64_DIR
-mkdir -p $X86_64_DIR
-
-# Function to download the file only if local and remote file last modified dates differ or the local file doesn't exist
-download_if_needed() {
-  remote_url="$1"
-  local_file="$2"
-  if [ -e "$local_file" ]; then
-    local_date=$(date -r "$local_file" +%s)
-    remote_date=$(curl -sI "$remote_url" | grep -i last-modified | sed 's/Last-Modified: //i' | date -f - +%s)
-    if [ "$local_date" = "$remote_date" ]; then
-      echo "File $local_file is up to date, skipping download."
-      return 0
-    fi
-  fi
-  curl -R "$remote_url" > "$local_file"
-}
-
-download_if_needed "$PREFIX/geph4-client-android-armv7" $ARM_DIR/$TARGET
-download_if_needed "$PREFIX/geph4-client-android-aarch64" $ARM64_DIR/$TARGET
-#download_if_needed "$PREFIX/geph4-client-android-amd64" $X86_64_DIR/$TARGET
-#download_if_needed "$PREFIX/geph4-client-android-i386" $X86_DIR/$TARGET
