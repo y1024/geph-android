@@ -116,6 +116,10 @@ window["NATIVE_GATE"] = {
     }
   },
 
+  async open_browser(url) {
+        await callRpc("open_browser", [url]);
+  },
+
   // Properties required by the interface
   supports_listen_all: true,
   supports_app_whitelist: true,
@@ -132,3 +136,5 @@ window["NATIVE_GATE"] = {
     };
   },
 };
+
+window.dispatchEvent(new Event("native_gate_ready"));

@@ -31,6 +31,8 @@ data class DaemonArgs(
 
     @SerialName("listen_all")
     val listenAll: Boolean,
+    @SerialName("allow_direct")
+    val allowDirect: Boolean,
 
 ) {
     fun toConfig(ctx: Context): JsonElement {
@@ -62,6 +64,7 @@ data class DaemonArgs(
             put("sess_metadata", metadata)
             put("dry_run", false)
             put("passthrough_china", prcWhitelist)
+            put("allow_direct", allowDirect)
             if (prcWhitelist || !(metadata is JsonNull)) {
                 put("spoof_dns", true)
             }
@@ -130,6 +133,7 @@ fun configTemplate(): JsonObject {
         put("spoof_dns", false)
         put("passthrough_china", false)
         put("dry_run", true)
+        put("allow_direct", false)
 
         putJsonObject("credentials") {
             put("secret", "")

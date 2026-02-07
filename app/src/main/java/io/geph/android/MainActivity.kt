@@ -18,6 +18,7 @@ import android.util.Log
 import android.view.View
 import android.view.View.OVER_SCROLL_NEVER
 import android.webkit.*
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.app.ActivityCompat
@@ -91,6 +92,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         bindActivity()
+        bindBackHandler()
 
         val filter =
                 IntentFilter().apply {
@@ -223,6 +225,26 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
 
         wview.addJavascriptInterface(this, "Android")
         wview.loadUrl("https://appassets.androidplatform.net/htmlbuild/index.html")
+    }
+
+    private fun bindBackHandler() {
+        onBackPressedDispatcher.addCallback(
+                this,
+                object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        val webView = mWebView
+                        if (webView != null && webView.canGoBack()) {
+                            webView.goBack()
+                            return
+                        }
+
+                        // No WebView history left; let the default activity back behavior run.
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                }
+        )
     }
 
     // -------------------------------------------------------------------
