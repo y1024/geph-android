@@ -517,6 +517,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Synchronized
     private fun ensureFallbackDaemon(): GephDaemon {
         val current = fallbackDaemon
         if (current != null && current.isAlive) {
@@ -529,7 +530,7 @@ class MainActivity : AppCompatActivity() {
                 for ((key, value) in configTemplate()) {
                     put(key, value)
                 }
-                put("control_listen", "127.0.0.1:10001")
+                put("cache", applicationContext.filesDir.resolve("cache_fallback").absolutePath)
             }
             GephDaemon(applicationContext, fallbackConfig, true).also {
                 Log.d(TAG, "STARTING FALLBACK DAEMON")
@@ -538,6 +539,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Synchronized
     private fun fallbackDaemonRpc(command: String): String {
         val firstTry = ensureFallbackDaemon().rawStdioRpc(command)
         if (firstTry != null) {
