@@ -85,33 +85,6 @@ fun configTemplate(): JsonObject {
 
         putJsonObject("broker") {
             putJsonObject("priority_race") {
-                // 1) First fronted
-                putJsonObject("0") {
-                    putJsonObject("fronted") {
-                        put("front", "https://www.cdn77.com/")
-                        put("host", "1826209743.rsc.cdn77.org")
-                    }
-                }
-                // 2) Second fronted
-                putJsonObject("1000") {
-                    putJsonObject("fronted") {
-                        put("front", "https://www.vuejs.org/")
-                        put("host", "svitania-naidallszei-2.netlify.app")
-                        put("override_dns", buildJsonArray {
-                            add("75.2.60.5:443")
-                        })
-                    }
-                }
-                putJsonObject("1000") {
-                    putJsonObject("fronted") {
-                        put("front", "https://www.vuejs.org/")
-                        put("host", "svitania-naidallszei-3.netlify.app")
-                        put("override_dns", buildJsonArray {
-                            add("75.2.60.5:443")
-                        })
-                    }
-                }
-
                 putJsonObject("1500") {
                     putJsonObject("aws_lambda") {
                         put("function_name", "geph-lambda-bouncer")
@@ -119,7 +92,26 @@ fun configTemplate(): JsonObject {
                         put("obfs_key", "855MJGAMB58MCPJBB97NADJ36D64WM2T:C4TN2M1H68VNMRVCCH57GDV2C5VN6V3RB8QMWP235D0P4RT2ACV7GVTRCHX3EC37")
                     }
                 }
+                putJsonObject("300") {
+                    putJsonObject("fronted") {
+                        put("front", "https://kubernetes.io/")
+                        put("host", "svitania-naidallszei-2.netlify.app")
+                        put("override_dns", buildJsonArray {
+                            add("75.2.60.5:443")
+                        })
+                    }
+                }
+                putJsonObject("0") {
+                    putJsonObject("fronted") {
+                        put("front", "https://kubernetes.io/")
+                        put("host", "svitania-naidallszei-2.netlify.app")
+                    }
+                }
             }
+        }
+
+        putJsonObject("tunneled_broker") {
+            put("direct", "https://broker.geph.io")
         }
 
         putJsonObject("broker_keys") {

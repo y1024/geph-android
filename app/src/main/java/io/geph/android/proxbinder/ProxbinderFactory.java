@@ -21,6 +21,10 @@ public class ProxbinderFactory {
         final String daemonBinaryPath =
                 context.getApplicationInfo().nativeLibraryDir + "/libgeph.so";
         ProcessBuilder pb = new ProcessBuilder(daemonBinaryPath, "binder-proxy", "--listen", "127.0.0.1:23456");
+        pb.environment().put("NO_COLOR", "1");
+        pb.environment().put("CLICOLOR", "0");
+        pb.environment().put("CLICOLOR_FORCE", "0");
+        pb.environment().put("TERM", "dumb");
         final Process proc;
         try {
             proc = pb.start();

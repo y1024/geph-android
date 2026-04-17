@@ -20,6 +20,24 @@ class GephDaemon(
     private val config: JsonObject,
     private val rpc: Boolean,
 ) {
+    companion object {
+        // Matches common ANSI CSI/OSC escape sequences so relayed logs stay readable.
+        private val ANSI_ESCAPE_REGEX =
+            Regex("""\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))""")
+
+        private fun configureNoColor(processBuilder: ProcessBuilder): ProcessBuilder {
+            processBuilder.environment().apply {
+                put("NO_COLOR", "1")
+                put("CLICOLOR", "0")
+                put("CLICOLOR_FORCE", "0")
+                put("TERM", "dumb")
+            }
+            return processBuilder
+        }
+
+        private fun stripAnsi(text: String): String = text.replace(ANSI_ESCAPE_REGEX, "")
+    }
+
     private val daemonProcess: Process
     private var inputReader: BufferedReader? = null
     private var outputWriter: BufferedWriter? = null
@@ -61,10 +79,10 @@ class GephDaemon(
         // 4) Spawn the daemon process
         daemonProcess = try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                ProcessBuilder(command)
+                configureNoColor(ProcessBuilder(command))
                     .start()
             } else {
-                ProcessBuilder(command)
+                configureNoColor(ProcessBuilder(command))
                     .redirectInput(
                         if (rpc) {
                             ProcessBuilder.Redirect.PIPE
@@ -91,7 +109,7 @@ class GephDaemon(
                 try {
                     var line: String?
                     while (errorReader.readLine().also { line = it } != null) {
-                        Log.d("GephDaemon", line!!)
+                        Log.d("GephDaemon", stripAnsi(line!!))
                     }
                 } catch(e: Exception) {
                     Log.d("GephDaemon", "exited with $e")
