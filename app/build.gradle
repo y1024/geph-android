@@ -73,23 +73,21 @@ android {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'androidx.appcompat:appcompat:1.5.1'
-    implementation 'com.google.android.material:material:1.7.0'
-    implementation 'androidx.recyclerview:recyclerview:1.2.1'
-    implementation 'com.squareup.retrofit2:retrofit:2.2.0'
-    implementation 'com.squareup.retrofit2:converter-gson:2.2.0'
-    implementation 'com.google.code.gson:gson:2.8.6'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.google.code.gson:gson:2.13.2'
     implementation 'com.android.volley:volley:1.2.1'
     implementation 'com.vdurmont:semver4j:3.1.0'
-    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
-        implementation files('jna-5.9.0.aar')
-    implementation 'org.apache.commons:commons-text:1.9'
-    implementation "androidx.webkit:webkit:1.5.0"
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    implementation files('jna-5.9.0.aar')
+    implementation 'org.apache.commons:commons-text:1.15.0'
+    implementation "androidx.webkit:webkit:1.12.1"
     implementation(platform("com.google.firebase:firebase-bom:32.7.1"))
     implementation "com.google.firebase:firebase-analytics"
-    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3"
     implementation 'androidx.browser:browser:1.8.0'
     implementation 'com.frybits.harmony:harmony:1.1.6'
 }
@@ -107,9 +105,3 @@ task copyGephBinaries(type: Copy) {
 
 preBuild.dependsOn copyGephBinaries
 copyGephBinaries.dependsOn preBuildScript
-
-afterEvaluate {
-    android.applicationVariants.all { variant ->
-        variant.javaCompiler.dependsOn(copyGephBinaries)
-    }
-}

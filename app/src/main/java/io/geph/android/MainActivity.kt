@@ -1,7 +1,6 @@
 package io.geph.android
 
 import android.annotation.SuppressLint
-import android.annotation.TargetApi
 import android.content.*
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -12,48 +11,39 @@ import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
 import android.util.Base64
 import android.util.Log
-import android.view.View
 import android.view.View.OVER_SCROLL_NEVER
 import android.webkit.*
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.webkit.WebViewAssetLoader
 import com.frybits.harmony.getHarmonySharedPreferences
-import io.geph.android.proxbinder.Proxbinder
 import io.geph.android.tun2socks.TunnelManager
 import io.geph.android.tun2socks.TunnelState
 import io.geph.android.tun2socks.TunnelVpnService
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
-import java.io.FileInputStream
-import java.io.IOException
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.Socket
-import kotlin.concurrent.thread
 import kotlinx.serialization.json.*
 import org.apache.commons.text.StringEscapeUtils
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.concurrent.thread
 
-class MainActivity : AppCompatActivity(), MainActivityInterface {
+class MainActivity : AppCompatActivity() {
 
     // -------------------------------------------------------------------
     // Fields for the main (VPN-based) daemon / service.
     // -------------------------------------------------------------------
-    var isShow = false
-    var scrollRange = -1
-    private val mInternetDown = false
-    private val mInternetDownSince: Long = 0
-    private var mUiHandler: Handler? = null
-    private val mProgress: View? = null
     private var mWebView: WebView? = null
     private var vpnReceiver: Receiver? = null
 
@@ -69,20 +59,30 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
      * 127.0.0.1:10000. It's a read-only lazy property, so it's only created once you actually
      * access it.
      */
-    private val fallbackDaemon: GephDaemon by lazy {
+    private var fallbackDaemon: GephDaemon? = null
 
-        // Create with a default configuration
-        val fallbackConfig = buildJsonObject {
-            // Copy all elements from the original config
-            for ((key, value) in configTemplate()) {
-                put(key, value)
-            }
-
-            // Ensure control port is set for daemon_rpc
-            put("control_listen", "127.0.0.1:10001")
+    private val prepareVpnLauncher = registerForActivityResult(StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            startTunnelService(applicationContext)
         }
-        Log.d(TAG, "STARTING FALLBACK DAEMON")
-        GephDaemon(this.applicationContext, fallbackConfig, true)
+    }
+
+    private val exportLogsLauncher = registerForActivityResult(CreateDocument("text/plain")) { uri ->
+        if (uri == null) {
+            return@registerForActivityResult
+        }
+        thread {
+            runCatching {
+                contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                    writer.write(collectDebugLogs())
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to export logs", error)
+                runOnUiThread {
+                    Toast.makeText(this, "Failed to export logs", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     // -------------------------------------------------------------------
@@ -100,10 +100,14 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                     addAction(TunnelVpnService.TUNNEL_VPN_START_BROADCAST)
                     addAction(TunnelVpnService.TUNNEL_VPN_START_SUCCESS_EXTRA)
                 }
-        vpnReceiver = Receiver()
-        LocalBroadcastManager.getInstance(this).registerReceiver(vpnReceiver!!, filter)
-
-
+        val receiver = Receiver()
+        vpnReceiver = receiver
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // Start update service after the daemon is launched
 
@@ -125,20 +129,8 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         }
     }
 
-    private fun isInstalledFromPlayStore(): Boolean {
-        val installerPackageName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            packageManager.getInstallSourceInfo(packageName).installingPackageName
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getInstallerPackageName(packageName)
-        }
-
-        return installerPackageName == "com.android.vending"
-    }
-
     override fun onResume() {
         super.onResume()
-        mUiHandler = Handler()
         if (isServiceRunning) {
             val intent = intent
             if (intent != null && intent.action == ACTION_STOP_VPN_SERVICE) {
@@ -150,15 +142,14 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
 
     override fun onDestroy() {
         super.onDestroy()
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(vpnReceiver!!)
-
-
-        fallbackDaemon.stopDaemon()
+        vpnReceiver?.let(::unregisterReceiver)
+        fallbackDaemon?.stopDaemon()
+        fallbackDaemon = null
+        mWebView?.removeJavascriptInterface("Android")
+        mWebView?.destroy()
+        mWebView = null
 
         Log.d(TAG, "destroying MainActivity")
-
-        // The original code does this; keep it if you want the same behavior
-        System.exit(0)
     }
 
     // -------------------------------------------------------------------
@@ -173,7 +164,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         wview.settings.javaScriptCanOpenWindowsAutomatically = true
         wview.settings.setSupportMultipleWindows(false)
         wview.overScrollMode = OVER_SCROLL_NEVER
-        WebView.setWebContentsDebuggingEnabled(true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         wview.webChromeClient = WebChromeClient()
 
         // asset loader
@@ -298,12 +289,10 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
             "start_daemon" -> {
                 // Create daemon args and start VPN service
                 rpcStartDaemon(args.getJSONObject(0))
-                Thread.sleep(1000)
                 return "null"
             }
             "restart_daemon" -> {
                 throw Exception("restarting not supported")
-                return "null"
             }
             "stop_daemon" -> {
                 // Stop the VPN service
@@ -324,7 +313,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                 } catch (e: Exception) {
                     Log.w(TAG, "daemon_rpc socket failed, falling back to stdio", e)
                     if (!command.contains("\"method\":\"stop\"")) {
-                        fallbackDaemon.rawStdioRpc(command) ?: "stdout died"
+                        fallbackDaemonRpc(command)
                     } else {
                         "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\"}"
                     }
@@ -341,15 +330,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
                 return "null"
             }
             "get_debug_logs" -> {
-                try {
-                    val process = Runtime.getRuntime().exec("logcat -d")
-                    val bufferedReader = process.inputStream.bufferedReader()
-                    val log = bufferedReader.use { it.readText() }
-                    return JSONObject.quote(log)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    "Error: ${e.message}"
-                }
+                return JSONObject.quote(collectDebugLogs())
             }
             "open_browser" -> {
                 Log.d(TAG, "open browser")
@@ -379,13 +360,12 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
 
             // Store the DaemonArgs in shared preferences as JSON for the VPN service
             val prefs = applicationContext.getHarmonySharedPreferences("daemon")
-            prefs.edit().apply {
-                putString(
-                        TunnelManager.DAEMON_ARGS,
-                        Json.encodeToString(DaemonArgs.serializer(), daemonArgs!!)
-                )
-                commit()
-            }
+            prefs.edit()
+                    .putString(
+                            TunnelManager.DAEMON_ARGS,
+                            Json.encodeToString(DaemonArgs.serializer(), daemonArgs!!)
+                    )
+                    .apply()
 
             // Start the VPN service
             startVpn()
@@ -401,7 +381,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     // Start the auto-update service with the daemon RPC function
     // -------------------------------------------------------------------
     private fun startAutoUpdateService() {
-        fallbackDaemon;
+        ensureFallbackDaemon()
         val daemonRpcFunction = { method: String, args: JSONArray ->
             val jsonRequest =
                     JSONObject().apply {
@@ -429,13 +409,7 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     // -------------------------------------------------------------------
     @JavascriptInterface
     fun rpcExportLogs() {
-        val intent =
-                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "application/vnd.sqlite3"
-                    putExtra(Intent.EXTRA_TITLE, "geph-debugpack.db")
-                }
-        startActivityForResult(intent, CREATE_FILE)
+        exportLogsLauncher.launch("geph-debugpack.log")
     }
 
     // -------------------------------------------------------------------
@@ -468,40 +442,20 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     }
 
     // -------------------------------------------------------------------
-    // The usual Proxbinder map from original code (if you need it)
-    // -------------------------------------------------------------------
-    private val pbMap: MutableMap<Int, Proxbinder> = HashMap()
-
-    // -------------------------------------------------------------------
-    // Activity result logic for VPN + file creation
-    // -------------------------------------------------------------------
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CODE_PREPARE_VPN && resultCode == RESULT_OK) {
-            startTunnelService(applicationContext)
-        }
-    }
-
-    // -------------------------------------------------------------------
     // Methods for the main (VPN-based) daemon
     // -------------------------------------------------------------------
     protected fun prepareAndStartTunnelService() {
         Log.d(TAG, "Starting VpnService")
-        if (hasVpnService()) {
-            if (prepareVpnService()) {
-                startTunnelService(applicationContext)
-            }
-        } else {
-            Log.e(TAG, "Device does not support whole device VPN mode.")
+        if (prepareVpnService()) {
+            startTunnelService(applicationContext)
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
     @Throws(ActivityNotFoundException::class)
     protected fun prepareVpnService(): Boolean {
         val prepareVpnIntent = VpnService.prepare(baseContext)
         if (prepareVpnIntent != null) {
-            startActivityForResult(prepareVpnIntent, REQUEST_CODE_PREPARE_VPN)
+            prepareVpnLauncher.launch(prepareVpnIntent)
             return false
         }
         return true
@@ -510,26 +464,28 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
     protected fun startTunnelService(context: Context?) {
         Log.i(TAG, "Starting tunnel service")
         val startTunnelVpn = Intent(context, TunnelVpnService::class.java)
-
-        if (startService(startTunnelVpn) == null) {
-            Log.d(TAG, "Failed to start tunnel vpn service")
-            return
+        try {
+            ContextCompat.startForegroundService(this, startTunnelVpn)
+            TunnelState.getTunnelState().setStartingTunnelManager()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start tunnel vpn service", e)
         }
-        TunnelState.getTunnelState().setStartingTunnelManager()
     }
 
     // -------------------------------------------------------------------
-    // Implement MainActivityInterface
+    // VPN controls
     // -------------------------------------------------------------------
-    override fun startVpn() {
+    fun startVpn() {
         prepareAndStartTunnelService()
     }
 
-    override fun stopVpn() {
+    fun stopVpn() {
         Log.e(TAG, "Attempting to stop VPN")
-        val currentTunnelManager = TunnelState.getTunnelState().tunnelManager
-        currentTunnelManager?.signalStopService()
-                ?: Log.e(TAG, "Cannot stop because tunnel manager is null!")
+        val stopTunnelVpn =
+                Intent(this, TunnelVpnService::class.java).apply {
+                    action = TunnelVpnService.ACTION_STOP_VPN
+                }
+        startService(stopTunnelVpn)
     }
 
     // -------------------------------------------------------------------
@@ -545,18 +501,9 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
             return tunnelState.startingTunnelManager || tunnelState.tunnelManager != null
         }
 
-    /** Whether the device supports the VPN-based service. */
-    private fun hasVpnService(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-    }
-
-    // This is if you need to see whether a fragment is present
-    private val isContentFragmentAdded: Boolean
-        get() = supportFragmentManager.findFragmentByTag(FRONT)?.isAdded == true
-
     private inner class Receiver : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
                 TunnelVpnService.TUNNEL_VPN_DISCONNECT_BROADCAST -> {
                     // handle if you want
                 }
@@ -570,15 +517,58 @@ class MainActivity : AppCompatActivity(), MainActivityInterface {
         }
     }
 
+    private fun ensureFallbackDaemon(): GephDaemon {
+        val current = fallbackDaemon
+        if (current != null && current.isAlive) {
+            return current
+        }
+        current?.stopDaemon()
+        fallbackDaemon = null
+        return run {
+            val fallbackConfig = buildJsonObject {
+                for ((key, value) in configTemplate()) {
+                    put(key, value)
+                }
+                put("control_listen", "127.0.0.1:10001")
+            }
+            GephDaemon(applicationContext, fallbackConfig, true).also {
+                Log.d(TAG, "STARTING FALLBACK DAEMON")
+                fallbackDaemon = it
+            }
+        }
+    }
+
+    private fun fallbackDaemonRpc(command: String): String {
+        val firstTry = ensureFallbackDaemon().rawStdioRpc(command)
+        if (firstTry != null) {
+            return firstTry
+        }
+
+        Log.w(TAG, "fallback stdio rpc died, restarting daemon")
+        fallbackDaemon?.stopDaemon()
+        fallbackDaemon = null
+
+        return ensureFallbackDaemon().rawStdioRpc(command)
+                ?: throw IllegalStateException("fallback stdio rpc stream closed")
+    }
+
+    private fun collectDebugLogs(): String {
+        return runCatching {
+            val process = ProcessBuilder("logcat", "-d")
+                .redirectErrorStream(true)
+                .start()
+            process.inputStream.bufferedReader().use { it.readText() }
+        }.getOrElse { error ->
+            "Error: ${error.message}"
+        }
+    }
+
     // -------------------------------------------------------------------
     // Companion object and other constants
     // -------------------------------------------------------------------
     companion object {
         const val ACTION_STOP_VPN_SERVICE = "stop_vpn_immediately"
         private val TAG = MainActivity::class.java.simpleName
-        private const val REQUEST_CODE_PREPARE_VPN = 100
-        private const val CREATE_FILE = 1
-        private const val FRONT = "front"
 
         fun encodeToBase64(image: Bitmap): String {
             val baos = ByteArrayOutputStream()

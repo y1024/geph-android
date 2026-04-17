@@ -3,11 +3,11 @@ package io.geph.android
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import androidx.annotation.RequiresApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
+import java.io.Closeable
 import java.io.File
 
 /**
@@ -38,6 +38,7 @@ class GephDaemon(
         private fun stripAnsi(text: String): String = text.replace(ANSI_ESCAPE_REGEX, "")
     }
 
+    private val configFile: File
     private val daemonProcess: Process
     private var inputReader: BufferedReader? = null
     private var outputWriter: BufferedWriter? = null
@@ -50,7 +51,9 @@ class GephDaemon(
         val configString = Json.encodeToString(JsonObject.serializer(), config)
         Log.d("GephDaemon", "starting with $config")
         // 2) Write the config to the app's private files directory
-        val configFile = File.createTempFile("geph_config_", ".json", context.cacheDir)
+        configFile = File.createTempFile("geph_config_", ".json", context.cacheDir).apply {
+            deleteOnExit()
+        }
         configFile.writeText(configString)
 
         // 3) Prepare the process command
@@ -127,16 +130,25 @@ class GephDaemon(
      */
     @Synchronized
     fun rawStdioRpc(line: String): String? {
-        outputWriter!!.write(line)
-        outputWriter!!.newLine()
-        outputWriter!!.flush()
-        Log.d("stdio", line)
+        return try {
+            val writer = outputWriter ?: return null
+            writer.write(line)
+            writer.newLine()
+            writer.flush()
+            Log.d("stdio", line)
 
-        // Read a single line from the daemon's stdout
-        return inputReader!!.readLine()
+            // Read a single line from the daemon's stdout
+            inputReader?.readLine()
+        } catch (e: Exception) {
+            Log.w("GephDaemon", "stdio rpc failed", e)
+            null
+        }
     }
 
     fun uploadVpn(arr: ByteArray, len: Int) {
+        if (len <= 0) {
+            return
+        }
         daemonProcess.outputStream.write(len / 256)
         daemonProcess.outputStream.write(len % 256)
         daemonProcess.outputStream.write(arr, 0, len)
@@ -144,14 +156,38 @@ class GephDaemon(
     }
 
     fun downloadVpn(bts: ByteArray): Int {
-        val a = daemonProcess.inputStream.read();
-        val b = daemonProcess.inputStream.read();
-        val len = a*256 + b;
-        var n = 0;
+        val a = daemonProcess.inputStream.read()
+        val b = daemonProcess.inputStream.read()
+        if (a < 0 || b < 0) {
+            return -1
+        }
+        val len = a * 256 + b
+        var n = 0
         while (n < len) {
-            n += daemonProcess.inputStream.read(bts, n, len - n);
+            val read = daemonProcess.inputStream.read(bts, n, len - n)
+            if (read < 0) {
+                return -1
+            }
+            n += read
         }
         return n
+    }
+
+    val isAlive: Boolean
+        get() = try {
+            daemonProcess.exitValue()
+            false
+        } catch (_: IllegalThreadStateException) {
+            true
+        }
+
+    fun waitForExit(): Int = daemonProcess.waitFor()
+
+    private fun closeQuietly(closeable: Closeable?) {
+        try {
+            closeable?.close()
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -159,7 +195,10 @@ class GephDaemon(
      * Optionally interrupt/cleanup the stderr-reading thread if desired.
      */
     fun stopDaemon() {
-        daemonProcess.destroy()
+        closeQuietly(inputReader)
+        closeQuietly(outputWriter)
+        daemonProcess.destroyForcibly()
         errorReaderThread?.interrupt()
+        configFile.delete()
     }
 }

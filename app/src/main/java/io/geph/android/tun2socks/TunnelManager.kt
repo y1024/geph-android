@@ -5,16 +5,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.PendingIntent.FLAG_IMMUTABLE
 import android.app.Service
+import android.content.pm.ServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
-import android.net.VpnService
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.system.OsConstants.F_SETFD
-import androidx.core.app.NotificationCompat
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.frybits.harmony.getHarmonySharedPreferences
 import com.sun.jna.Library
 import com.sun.jna.Native
@@ -25,30 +25,19 @@ import io.geph.android.R
 import kotlinx.serialization.json.*
 import java.io.FileInputStream
 import java.io.FileOutputStream
-
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
-import kotlin.system.exitProcess
 
 
-interface LibC : Library { // A representation of libC in Java
-    fun fcntl(fd: Int, cmd: Int, args: Int): Int; // mapping of the puts function, in C `int puts(const char *s);`
-    fun dup2(oldFd: Int, newFd: Int): Int;
+interface LibC : Library {
+    fun fcntl(fd: Int, cmd: Int, args: Int): Int
+    fun dup2(oldFd: Int, newFd: Int): Int
 }
 
 class TunnelManager(parentService: TunnelVpnService?) {
-    private var m_parentService: TunnelVpnService? = null
-    private var m_tunnelThreadStopSignal: CountDownLatch? = null
-    private var m_tunnelThread: Thread? = null
-    private val m_isStopping: AtomicBoolean
-    private val m_isReconnecting: AtomicBoolean
+    private var parentService: TunnelVpnService? = parentService
     private var tunFd: ParcelFileDescriptor? = null
-    
-    // Store GephDaemon instance
     private var gephDaemon: GephDaemon? = null
 
-    // Implementation of android.app.Service.onStartCommand
     fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
             Log.i(LOG_TAG, "Intent is null")
@@ -60,10 +49,10 @@ class TunnelManager(parentService: TunnelVpnService?) {
         setupAndRunVpnService()
         
         // Set up notification
-        val ctx = context
+        val ctx = requireContext()
         val notificationIntent = Intent(ctx, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(ctx, 0, notificationIntent, FLAG_IMMUTABLE)
-        val largeIcon = BitmapFactory.decodeResource(ctx!!.resources, R.mipmap.ic_launcher)
+        val largeIcon = BitmapFactory.decodeResource(ctx.resources, R.mipmap.ic_launcher)
         val channelId = createNotificationChannel()
         val builder = NotificationCompat.Builder(ctx, channelId)
                 .setSmallIcon(R.drawable.ic_stat_notification_icon)
@@ -76,13 +65,13 @@ class TunnelManager(parentService: TunnelVpnService?) {
         
         // Start foreground as special-use on API 34+ (VPNs require continuous FGS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // API 34+
-            vpnService!!.startForeground(
+            requireVpnService().startForeground(
                 NOTIFICATION_ID,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
-            vpnService!!.startForeground(NOTIFICATION_ID, notification)
+            requireVpnService().startForeground(NOTIFICATION_ID, notification)
         }
         return Service.START_STICKY
     }
@@ -94,9 +83,8 @@ class TunnelManager(parentService: TunnelVpnService?) {
             val chan = NotificationChannel(channelId,
                     channelName, NotificationManager.IMPORTANCE_NONE)
             chan.description = "Geph background service"
-            val notificationManager = context!!.getSystemService(NotificationManager::class.java)
-            assert(notificationManager != null)
-            notificationManager!!.createNotificationChannel(chan)
+            val notificationManager = requireContext().getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(chan)
             return channelId
         }
         return ""
@@ -106,12 +94,12 @@ class TunnelManager(parentService: TunnelVpnService?) {
         Log.e("SETUP", "Setting up VPN service and daemon")
         
         // Get DaemonArgs from shared preferences
-        val prefs = context!!.getHarmonySharedPreferences("daemon")
+        val prefs = requireContext().getHarmonySharedPreferences("daemon")
         val daemonArgsJson = prefs.getString(DAEMON_ARGS, null)
         
         if (daemonArgsJson == null) {
             Log.e(LOG_TAG, "No daemon arguments found in preferences")
-            m_parentService!!.broadcastVpnStart(false)
+            parentService?.broadcastVpnStart(false)
             return
         }
         
@@ -121,7 +109,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
             json.decodeFromString(DaemonArgs.serializer(), daemonArgsJson)
         } catch (e: Exception) {
             Log.e(LOG_TAG, "Failed to parse daemon arguments: ${e.message}")
-            m_parentService!!.broadcastVpnStart(false)
+            parentService?.broadcastVpnStart(false)
             return
         }
         
@@ -129,11 +117,11 @@ class TunnelManager(parentService: TunnelVpnService?) {
         var vpnInterface: ParcelFileDescriptor? = null
         while (vpnInterface == null) {
             Log.d("SETUP", "Attempting to create VPN interface")
-            val builder = m_parentService!!.newBuilder()
+            val builder = requireParentService().newBuilder()
                 .addAddress("100.64.89.64", 10)
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("100.64.89.1")
-                .addDisallowedApplication(context!!.packageName)
+                .addDisallowedApplication(requireContext().packageName)
             
             // Add excluded apps from the app whitelist
             try {
@@ -147,7 +135,6 @@ class TunnelManager(parentService: TunnelVpnService?) {
                 }
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "Error setting up app exclusions: ${e.message}")
-                e.printStackTrace()
             }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -166,15 +153,15 @@ class TunnelManager(parentService: TunnelVpnService?) {
     private fun startGephDaemon(vpnInterface: ParcelFileDescriptor, daemonArgs: DaemonArgs) {
         val fd = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val fd = vpnInterface.detachFd()
-            var hoho = Native.load(LibC::class.java);
-            val rv = hoho.fcntl(fd, F_SETFD, 0);
-            hoho.dup2(fd, 0);
+            val libc = Native.load(LibC::class.java)
+            libc.fcntl(fd, F_SETFD, 0)
+            libc.dup2(fd, 0)
             0
         } else {
             -1 // Will handle stdio-based approach for older versions
         }
         // Create a config from the DaemonArgs
-        val config = daemonArgs.toConfig(context!!).jsonObject
+        val config = daemonArgs.toConfig(requireContext()).jsonObject
         
         // Add VPN-specific configurations to the config
         val vpnEnabledConfig = buildJsonObject {
@@ -193,7 +180,7 @@ class TunnelManager(parentService: TunnelVpnService?) {
         }
         
         // Create and start the daemon
-        gephDaemon = GephDaemon(context!!, vpnEnabledConfig, false)
+        gephDaemon = GephDaemon(requireContext(), vpnEnabledConfig, false)
         
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             // For older Android versions, manually handle tunnel I/O
@@ -201,27 +188,14 @@ class TunnelManager(parentService: TunnelVpnService?) {
         }
         
         // Broadcast successful VPN start
-        m_parentService!!.broadcastVpnStart(true)
+        parentService?.broadcastVpnStart(true)
         
         // Monitor daemon for crashes
         thread {
-            // This thread will exit when the daemon process exits
             try {
-                // Wait for daemon process to exit (via reflection)
-                val process = gephDaemon!!.javaClass.getDeclaredField("daemonProcess")
-                process.isAccessible = true
-                val daemonProcess = process.get(gephDaemon) as Process
-                
-                val exitCode = daemonProcess.waitFor()
+                val exitCode = gephDaemon?.waitForExit() ?: return@thread
                 Log.e(LOG_TAG, "Daemon process exited with code: $exitCode")
-                
-                // When daemon exits, stop the VPN service
-                vpnService?.stopForeground(true)
-                vpnService?.stopSelf()
-                Log.e(LOG_TAG, "Daemon process finished: $exitCode")
-                // destroy this process to fully fully clean up
-                exitProcess(0)
-
+                signalStopService()
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "Error monitoring daemon process: ${e.message}")
             }
@@ -232,22 +206,30 @@ class TunnelManager(parentService: TunnelVpnService?) {
         // download
         Log.e(LOG_TAG, "VPN I/O SET UP")
         Thread {
-            val body = ByteArray(40000);
+            val body = ByteArray(40000)
             val writer = FileOutputStream(vpnInterface.fileDescriptor)
-            while(true) {
-                val n = gephDaemon!!.downloadVpn(body);
+            while (!Thread.currentThread().isInterrupted && gephDaemon?.isAlive == true) {
+                val n = gephDaemon?.downloadVpn(body) ?: -1
+                if (n <= 0) {
+                    break
+                }
                 writer.write(body, 0, n)
             }
+            writer.close()
         }.start()
         // upload
         Thread {
             Log.e(LOG_TAG, "VPN I/O UP STARTED")
-            val body = ByteArray(40000);
+            val body = ByteArray(40000)
             val reader = FileInputStream(vpnInterface.fileDescriptor)
-            while(true) {
-                val n = reader.read(body);
-                gephDaemon!!.uploadVpn(body, n);
+            while (!Thread.currentThread().isInterrupted && gephDaemon?.isAlive == true) {
+                val n = reader.read(body)
+                if (n <= 0) {
+                    break
+                }
+                gephDaemon?.uploadVpn(body, n)
             }
+            reader.close()
         }.start()
     }
 
@@ -260,49 +242,17 @@ class TunnelManager(parentService: TunnelVpnService?) {
         tunFd = null
     }
 
-    // Implementation of android.app.Service.onDestroy
     fun onDestroy() {
         terminateDaemon()
-        
-        if (m_tunnelThread == null) {
-            return
-        }
-        
-        // signalStopService should have been called, but in case it was not, call here.
-        signalStopService()
-        
-        try {
-            m_tunnelThread!!.join()
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-        
-        m_tunnelThreadStopSignal = null
-        m_tunnelThread = null
-        
-        // stop the foreground service
-        vpnService!!.stopForeground(true)
+        stopForegroundCompat()
     }
 
-    // Signals the runTunnel thread to stop. The thread will self-stop the service.
     fun signalStopService() {
-        if (m_tunnelThreadStopSignal != null) {
-            m_tunnelThreadStopSignal!!.countDown()
-        }
-        
-        // Also terminate the daemon
+        parentService?.broadcastVpnDisconnect()
         terminateDaemon()
-    }
-
-    // Context accessors
-    val context: Context?
-        get() = m_parentService
-
-    val vpnService: VpnService?
-        get() = m_parentService
-
-    fun newVpnServiceBuilder(): VpnService.Builder {
-        return m_parentService!!.newBuilder()
+        stopForegroundCompat()
+        parentService?.stopSelf()
+        Process.killProcess(Process.myPid())
     }
 
     companion object {
@@ -314,9 +264,21 @@ class TunnelManager(parentService: TunnelVpnService?) {
         private const val LOG_TAG = "TunnelManager"
     }
 
-    init {
-        m_parentService = parentService
-        m_isStopping = AtomicBoolean(false)
-        m_isReconnecting = AtomicBoolean(false)
+    private fun requireContext(): Context = checkNotNull(parentService) { "VPN service unavailable" }
+
+    private fun requireParentService(): TunnelVpnService =
+        checkNotNull(parentService) { "VPN service unavailable" }
+
+    private fun requireVpnService(): TunnelVpnService =
+        checkNotNull(parentService) { "VPN service unavailable" }
+
+    private fun stopForegroundCompat() {
+        val service = parentService ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            service.stopForeground(true)
+        }
     }
 }
